@@ -58,8 +58,10 @@ def api_call(method, params=None):
         print(f"API error: {e}", flush=True)
         return None
 
-def search_youtube(query, max_results=10, search_type="track"):
+def search_youtube(query, max_results=15, search_type="track"):
+    """Пошук через YouTube Music"""
     all_results = []
+    
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
@@ -70,11 +72,14 @@ def search_youtube(query, max_results=10, search_type="track"):
         }
     }
     
+    # === СПОСІБ 1: YouTube Music (music.youtube.com) ===
     try:
         if search_type == "artist":
-            yt_query = f"ytsearch{max_results}:{query} official audio topic"
+            query_url = f"https://music.youtube.com/search?q={urllib.parse.quote(query)}"
+            yt_query = f"ytsearch{max_results}:{query} album track official"
         else:
-            yt_query = f"ytsearch{max_results}:{query} audio topic"
+            query_url = f"https://music.youtube.com/search?q={urllib.parse.quote(query)}"
+            yt_query = f"ytsearch{max_results}:{query} official audio"
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(yt_query, download=False)
@@ -83,10 +88,13 @@ def search_youtube(query, max_results=10, search_type="track"):
                     title = e.get('title', '')
                     channel = e.get('channel', '')
                     duration = e.get('duration', 0)
-                    bad_keywords = ['gameplay', 'podcast', 'interview', 'review', 'tutorial', 'reaction', 'mix']
-                    if all(kw not in title.lower() for kw in bad_keywords) and duration > 30:
+                    vid = e.get('id', '')
+                    
+                    # Фільтруємо тільки музику
+                    bad_keywords = ['gameplay', 'podcast', 'interview', 'tutorial', 'walkthrough', 'review']
+                    if all(kw not in title.lower() for kw in bad_keywords) and duration > 10:
                         all_results.append({
-                            'video_id': e.get('id', ''),
+                            'video_id': vid,
                             'title': title[:80],
                             'artist': channel[:50],
                             'duration': duration,
@@ -95,12 +103,13 @@ def search_youtube(query, max_results=10, search_type="track"):
     except Exception as e:
         print(f"YouTube search error: {e}", flush=True)
     
+    # === СПОСІБ 2: SoundCloud ===
     try:
         sc_query = f"scsearch{max_results}:{query}"
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(sc_query, download=False)
             for e in info.get('entries', []):
-                if e and e.get('duration', 0) > 30:
+                if e and e.get('duration', 0) > 10:
                     all_results.append({
                         'video_id': e.get('webpage_url', ''),
                         'title': e.get('title', '')[:80],
@@ -111,6 +120,7 @@ def search_youtube(query, max_results=10, search_type="track"):
     except Exception as e:
         print(f"SoundCloud search error: {e}", flush=True)
     
+    # Прибираємо дублікати
     seen = set()
     unique_results = []
     for r in all_results:
@@ -119,7 +129,7 @@ def search_youtube(query, max_results=10, search_type="track"):
             seen.add(key)
             unique_results.append(r)
     
-    return unique_results[:10]
+    return unique_results[:15]
 
 def download_audio(video_id):
     if 'soundcloud.com' in video_id:
