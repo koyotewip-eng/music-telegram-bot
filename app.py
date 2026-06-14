@@ -70,10 +70,10 @@ def _write_cookies(path):
                 f.write(f".youtube.com\tTRUE\t/\tTRUE\t0\t{name}\t{value}\n")
 
 def search_youtube(query, max_results=15, search_type="track"):
-    """Пошук музики з cookies"""
+    """Пошук тільки YouTube з cookies"""
     all_results = []
     
-    cookies_path = os.path.join(tempfile.gettempdir(), f"cookies_search_{hash(query)}.txt")
+    cookies_path = os.path.join(tempfile.gettempdir(), f"cookies_{hash(query)}.txt")
     _write_cookies(cookies_path)
     
     ydl_opts = {
@@ -82,17 +82,14 @@ def search_youtube(query, max_results=15, search_type="track"):
         'extract_flat': True,
         'cookiefile': cookies_path,
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
         }
     }
     
     try:
-        if search_type == "artist":
-            yt_query = f"ytsearch{max_results}:{query} music"
-        else:
-            yt_query = f"ytsearch{max_results}:{query} audio"
-        
+        yt_query = f"ytsearch{max_results}:{query}"
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(yt_query, download=False)
             for e in info.get('entries', []):
@@ -104,47 +101,20 @@ def search_youtube(query, max_results=15, search_type="track"):
                         'duration': e.get('duration', 0),
                         'source': 'YouTube'
                     })
+        print(f"Found {len(all_results)} results for: {query}", flush=True)
     except Exception as e:
-        print(f"YouTube error: {e}", flush=True)
-    
-    try:
-        sc_query = f"scsearch10:{query}"
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(sc_query, download=False)
-            for e in info.get('entries', []):
-                if e and e.get('duration', 0) > 10:
-                    all_results.append({
-                        'video_id': e.get('webpage_url', ''),
-                        'title': e.get('title', '')[:80],
-                        'artist': e.get('uploader', '')[:50],
-                        'duration': e.get('duration', 0),
-                        'source': 'SoundCloud'
-                    })
-    except:
-        pass
+        print(f"Search error: {e}", flush=True)
     
     try:
         os.remove(cookies_path)
     except:
         pass
     
-    seen = set()
-    unique_results = []
-    for r in all_results:
-        key = f"{r['title']}_{r['artist']}"
-        if key not in seen:
-            seen.add(key)
-            unique_results.append(r)
-    
-    print(f"Found {len(unique_results)} results", flush=True)
-    return unique_results[:15]
+    return all_results[:15]
 
 def download_audio(video_id):
     """Завантаження з cookies"""
-    if 'soundcloud.com' in video_id:
-        url = video_id
-    else:
-        url = f"https://www.youtube.com/watch?v={video_id}"
+    url = f"https://www.youtube.com/watch?v={video_id}"
     
     temp_dir = tempfile.gettempdir()
     file_hash = str(abs(hash(url)))
@@ -162,7 +132,7 @@ def download_audio(video_id):
         'no_warnings': True,
         'cookiefile': cookies_path,
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
             'Accept': '*/*',
             'Accept-Language': 'en-US,en;q=0.9',
         },
