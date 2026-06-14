@@ -657,7 +657,6 @@ def main():
                     offset = upd['update_id'] + 1
                     process_update(upd)
             
-            # Очищення раз на годину
             if time.time() - last_cleanup > 3600:
                 cleanup_temp_files()
                 last_cleanup = time.time()
@@ -666,6 +665,23 @@ def main():
         except Exception as e:
             print(f"Loop error: {e}", flush=True)
             time.sleep(3)
+
+# Фейковий HTTP-сервер для Render
+import http.server
+import threading
+
+def run_health_server():
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'OK')
+        def log_message(self, *args):
+            pass
+    httpd = http.server.HTTPServer(('0.0.0.0', 10000), Handler)
+    httpd.serve_forever()
+
+threading.Thread(target=run_health_server, daemon=True).start()
 
 if __name__ == "__main__":
     main()
