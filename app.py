@@ -16,8 +16,6 @@ BOT_TOKEN = "8981234358:AAHMZAirobfP_F-bt5WCY1LJxyRMW0E5OH8"
 ADMIN_IDS = [2104120716, 508881013]
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-COOKIES_RAW = "APISID=6lq2xTKRyDqX7yyw/AQowjf-gmcILKItxs; SAPISID=H1i1QJwoc_e-Ssej/AKAi8a-McoHTo32uG; __Secure-1PAPISID=H1i1QJwoc_e-Ssej/AKAi8a-McoHTo32uG; __Secure-3PAPISID=H1i1QJwoc_e-Ssej/AKAi8a-McoHTo32uG; SID=g.a000_AhEoweiy-VOhvczD0d3hgh57Fzad1L4ERmJPPHXWDN6mXtNwsirFVbA1VA-zn69kY2UAwACgYKASYSARcSFQHGX2Mij2CKNcwuu9ilU1T9Q2tuwRoVAUF8yKqGK42Aucx9qtN2CXDvcdg30076; SIDCC=AKEyXzXo7TjeaYBrndpOXb88WbcLLEc8rqwjO8ZYfFDL_1uHPFtIY1izxpqP_Sw8lm3vNCCt8g; PREF=f6=40000000&tz=Europe.Berlin&f7=100&f5=30000"
-
 ssl_ctx = ssl.create_default_context()
 ssl_ctx.check_hostname = False
 ssl_ctx.verify_mode = ssl.CERT_NONE
@@ -48,24 +46,12 @@ def api_call(method, params=None):
         print(f"API error: {e}", flush=True)
         return None
 
-def _write_cookies(path):
-    with open(path, 'w') as f:
-        f.write("# Netscape HTTP Cookie File\n")
-        for cookie in COOKIES_RAW.split('; '):
-            if '=' in cookie:
-                name, value = cookie.split('=', 1)
-                f.write(f".youtube.com\tTRUE\t/\tTRUE\t0\t{name}\t{value}\n")
-
 def search_youtube(query, max_results=15, search_type="track"):
     all_results = []
-    cookies_path = os.path.join(tempfile.gettempdir(), f"cookies_{hash(query)}.txt")
-    _write_cookies(cookies_path)
     ydl_opts = {
         'quiet': True, 'no_warnings': True, 'extract_flat': True,
-        'cookiefile': cookies_path,
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
             'Accept-Language': 'en-US,en;q=0.9',
         }
     }
@@ -81,13 +67,9 @@ def search_youtube(query, max_results=15, search_type="track"):
                         'duration': e.get('duration', 0),
                         'source': 'YouTube'
                     })
-        print(f"Found {len(all_results)} results for: {query}", flush=True)
+        print(f"Found {len(all_results)} results", flush=True)
     except Exception as e:
         print(f"Search error: {e}", flush=True)
-    try:
-        os.remove(cookies_path)
-    except:
-        pass
     return all_results[:15]
 
 def download_audio(video_id):
@@ -96,24 +78,23 @@ def download_audio(video_id):
     file_hash = str(abs(hash(url)))
     output = os.path.join(temp_dir, f"{file_hash}.%(ext)s")
     final_path = os.path.join(temp_dir, f"{file_hash}.mp3")
-    cookies_path = os.path.join(temp_dir, f"cookies_{file_hash}.txt")
-    _write_cookies(cookies_path)
+    
     ydl_opts = {
-        'format': 'bestaudio/best', 'outtmpl': output,
+        'format': 'bestaudio/best',
+        'outtmpl': output,
         'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
-        'quiet': True, 'no_warnings': True, 'cookiefile': cookies_path,
+        'quiet': True, 'no_warnings': True,
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
             'Accept': '*/*', 'Accept-Language': 'en-US,en;q=0.9',
         },
-        'socket_timeout': 30, 'retries': 3,
+        'socket_timeout': 30, 'retries': 5,
+        'extractor_args': {'youtube': {'skip': ['dash', 'hls']}},
     }
+    
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
-    try:
-        os.remove(cookies_path)
-    except:
-        pass
+    
     return final_path
 
 def send_message(chat_id, text, reply_markup=None):
@@ -157,8 +138,8 @@ def save_track_info(video_id, title, artist, file_id):
         cursor.execute('INSERT OR REPLACE INTO tracks (video_id, title, artist, file_id) VALUES (?, ?, ?, ?)',
                        (video_id, title, artist, file_id))
         conn.commit()
-    except Exception as e:
-        print(f"DB error: {e}", flush=True)
+    except:
+        pass
 
 def format_duration(seconds):
     if not seconds:
@@ -196,27 +177,26 @@ def show_main_menu(chat_id, message_id=None):
         return send_message(chat_id, text, kb)
 
 def show_help(chat_id, message_id):
-    text = "🎵 <b>Допомога</b>\n\n• <b>Пошук</b> — знайти трек або артиста\n• <b>Плейлисти</b> — твої збірки треків\n• <b>Улюблене</b> — збережені треки\n\n📱 <i>Нативний плеєр iOS</i>\n🔒 <i>Приватний бот</i>"
-    kb = {'inline_keyboard': [home_button()]}
-    edit_message(chat_id, message_id, text, kb)
+    text = "🎵 <b>Допомога</b>\n\n• <b>Пошук</b> — знайти трек\n• <b>Плейлисти</b> — збірки\n• <b>Улюблене</b> — збережене\n\n📱 <i>iOS плеєр</i>"
+    edit_message(chat_id, message_id, text, {'inline_keyboard': [home_button()]})
 
 def show_search_menu(chat_id, message_id):
-    edit_message(chat_id, message_id, "🔍 <b>Пошук музики</b>\n\nОбери тип пошуку:", search_type_keyboard())
+    edit_message(chat_id, message_id, "🔍 <b>Пошук музики</b>\n\nОбери тип:", search_type_keyboard())
 
 def show_search_prompt(chat_id, message_id, search_type, back_data, user_id):
     type_text = "трек" if search_type == "track" else "артиста"
     cursor.execute('INSERT OR REPLACE INTO user_state (user_id, state, value) VALUES (?, ?, ?)',
                    (user_id, f'search_{search_type}', ''))
     conn.commit()
-    kb = {'inline_keyboard': [back_button(back_data, '↩️  Назад до вибору'), [{'text': '🏠  Головне меню', 'callback_data': 'menu_main'}]]}
-    edit_message(chat_id, message_id, f"🔍 <b>Пошук за {type_text}ом</b>\n\n✏️ Напиши назву в чат:", kb)
+    kb = {'inline_keyboard': [back_button(back_data), home_button()]}
+    edit_message(chat_id, message_id, f"🔍 <b>Пошук за {type_text}ом</b>\n\n✏️ Напиши назву:", kb)
 
 def show_search_results(chat_id, results, search_query, search_type):
     type_text = "треком" if search_type == "track" else "артистом"
     if not results:
         send_message(chat_id, f"😔 Нічого не знайдено за {type_text}: <b>{search_query}</b>", main_menu_keyboard())
         return
-    text = f"🎶 <b>Результати за {type_text}:</b> {search_query}\n\n"
+    text = f"🎶 <b>Результати:</b> {search_query}\n\n"
     keyboard = {'inline_keyboard': []}
     for i, t in enumerate(results[:10]):
         dur = format_duration(t.get('duration', 0))
@@ -231,15 +211,15 @@ def show_playlists(chat_id, message_id, user_id):
     playlists = cursor.fetchall()
     keyboard = {'inline_keyboard': []}
     if not playlists:
-        text = "📂 <b>Плейлисти</b>\n\nУ тебе ще немає плейлистів."
+        text = "📂 <b>Плейлисти</b>\n\nНемає плейлистів."
     else:
-        text = "📂 <b>Плейлисти</b>\n\nОбери плейлист:\n"
+        text = "📂 <b>Плейлисти</b>\n\nОбери:\n"
         for pl in playlists:
             cursor.execute('SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ?', (pl[0],))
             count = cursor.fetchone()[0]
-            text += f"• {pl[1]} ({count} треків)\n"
+            text += f"• {pl[1]} ({count})\n"
             keyboard['inline_keyboard'].append([{'text': f"📁 {pl[1]}", 'callback_data': f"playlist_{pl[0]}_0"}])
-    keyboard['inline_keyboard'].append([{'text': '➕  Створити плейлист', 'callback_data': 'create_playlist'}])
+    keyboard['inline_keyboard'].append([{'text': '➕  Створити', 'callback_data': 'create_playlist'}])
     keyboard['inline_keyboard'].append(home_button())
     edit_message(chat_id, message_id, text, keyboard)
 
@@ -247,42 +227,38 @@ def show_create_playlist_prompt(chat_id, message_id, user_id):
     cursor.execute('INSERT OR REPLACE INTO user_state (user_id, state, value) VALUES (?, ?, ?)',
                    (user_id, 'create_playlist', ''))
     conn.commit()
-    kb = {'inline_keyboard': [back_button('menu_playlists', '↩️  До плейлистів'), [{'text': '🏠  Головне меню', 'callback_data': 'menu_main'}]]}
-    edit_message(chat_id, message_id, "➕ <b>Новий плейлист</b>\n\n✏️ Напиши назву в чат:", kb)
+    kb = {'inline_keyboard': [back_button('menu_playlists'), home_button()]}
+    edit_message(chat_id, message_id, "➕ <b>Новий плейлист</b>\n\n✏️ Напиши назву:", kb)
 
 def show_playlist_tracks(chat_id, message_id, pl_id, page=0):
     cursor.execute('SELECT name FROM playlists WHERE id = ?', (pl_id,))
     pl_row = cursor.fetchone()
     if not pl_row:
-        edit_message(chat_id, message_id, "❌ Плейлист не знайдено", main_menu_keyboard())
+        edit_message(chat_id, message_id, "❌ Не знайдено", main_menu_keyboard())
         return
     pl_name = pl_row[0]
     per_page = 5
     offset = page * per_page
-    cursor.execute('SELECT pt.video_id, pt.title, pt.artist FROM playlist_tracks pt WHERE pt.playlist_id = ? LIMIT ? OFFSET ?', (pl_id, per_page, offset))
+    cursor.execute('SELECT video_id, title, artist FROM playlist_tracks WHERE playlist_id = ? LIMIT ? OFFSET ?', (pl_id, per_page, offset))
     tracks = cursor.fetchall()
     cursor.execute('SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ?', (pl_id,))
     total = cursor.fetchone()[0]
     total_pages = max(1, (total + per_page - 1) // per_page)
     keyboard = {'inline_keyboard': []}
-    if not tracks and page == 0:
-        text = f"📁 <b>{pl_name}</b>\n\nПлейлист пустий."
+    if not tracks:
+        text = f"📁 <b>{pl_name}</b>\n\nПусто."
     else:
-        text = f"📁 <b>{pl_name}</b>\nСтор. {page+1}/{total_pages}\n\n"
+        text = f"📁 <b>{pl_name}</b>\n{page+1}/{total_pages}\n\n"
         for i, t in enumerate(tracks):
-            num = offset + i + 1
-            text += f"{num}. {t[1][:60]}\n   <i>{t[2][:40]}</i>\n"
-            keyboard['inline_keyboard'].append([{'text': f"▶️ {t[1][:50]}", 'callback_data': f"play_{t[0]}"}])
+            text += f"{offset+i+1}. {t[1][:50]}\n"
+            keyboard['inline_keyboard'].append([{'text': f"▶️ {t[1][:45]}", 'callback_data': f"play_{t[0]}"}])
     nav = []
-    if page > 0:
-        nav.append({'text': '⬅️', 'callback_data': f'playlist_{pl_id}_{page-1}'})
+    if page > 0: nav.append({'text': '⬅️', 'callback_data': f'playlist_{pl_id}_{page-1}'})
     nav.append({'text': '🔍', 'callback_data': f'search_in_pl_{pl_id}'})
-    if page < total_pages - 1:
-        nav.append({'text': '➡️', 'callback_data': f'playlist_{pl_id}_{page+1}'})
-    if nav:
-        keyboard['inline_keyboard'].append(nav)
-    keyboard['inline_keyboard'].append([{'text': '🗑  Видалити плейлист', 'callback_data': f'delete_pl_{pl_id}'}])
-    keyboard['inline_keyboard'].append(back_button('menu_playlists', '↩️  До плейлистів'))
+    if page < total_pages - 1: nav.append({'text': '➡️', 'callback_data': f'playlist_{pl_id}_{page+1}'})
+    if nav: keyboard['inline_keyboard'].append(nav)
+    keyboard['inline_keyboard'].append([{'text': '🗑  Видалити', 'callback_data': f'delete_pl_{pl_id}'}])
+    keyboard['inline_keyboard'].append(back_button('menu_playlists'))
     keyboard['inline_keyboard'].append(home_button())
     edit_message(chat_id, message_id, text, keyboard)
 
@@ -291,11 +267,11 @@ def show_favorites(chat_id, message_id, user_id):
     favs = cursor.fetchall()
     keyboard = {'inline_keyboard': []}
     if not favs:
-        text = "❤️ <b>Улюблене</b>\n\nПоки що пусто."
+        text = "❤️ <b>Улюблене</b>\n\nПусто."
     else:
-        text = f"❤️ <b>Улюблене</b> ({len(favs)} треків)\n\n"
+        text = f"❤️ <b>Улюблене</b> ({len(favs)})\n\n"
         for i, f in enumerate(favs[:20]):
-            text += f"{i+1}. {f[1][:50]}\n   <i>{f[2][:30]}</i>\n"
+            text += f"{i+1}. {f[1][:50]}\n"
             keyboard['inline_keyboard'].append([{'text': f"▶️ {f[1][:45]}", 'callback_data': f"play_{f[0]}"}])
     keyboard['inline_keyboard'].append(home_button())
     edit_message(chat_id, message_id, text, keyboard)
@@ -303,13 +279,13 @@ def show_favorites(chat_id, message_id, user_id):
 def show_track_actions(chat_id, video_id, title, artist):
     kb = {'inline_keyboard': [
         [{'text': '▶️  Грати', 'callback_data': f'play_{video_id}'}, {'text': '❤️', 'callback_data': f'fav_{video_id}'}],
-        [{'text': '📋  Додати до плейлисту', 'callback_data': f'addtopl_{video_id}'}],
+        [{'text': '📋  До плейлисту', 'callback_data': f'addtopl_{video_id}'}],
         [{'text': '🏠  Головне меню', 'callback_data': 'menu_main'}]
     ]}
-    send_message(chat_id, f"🎵 <b>{title[:80]}</b>\n<i>{artist[:60]}</i>\n\nОбери дію:", kb)
+    send_message(chat_id, f"🎵 <b>{title[:80]}</b>\n<i>{artist[:60]}</i>", kb)
 
 def show_add_to_playlist(chat_id, message_id, video_id, user_id):
-    cursor.execute('SELECT id, name FROM playlists WHERE user_id = ? ORDER BY name', (user_id,))
+    cursor.execute('SELECT id, name FROM playlists WHERE user_id = ?', (user_id,))
     playlists = cursor.fetchall()
     if not playlists:
         api_call('answerCallbackQuery', {'callback_query_id': str(time.time()), 'text': 'Спочатку створи плейлист!', 'show_alert': True})
@@ -318,7 +294,7 @@ def show_add_to_playlist(chat_id, message_id, video_id, user_id):
     for pl in playlists:
         keyboard['inline_keyboard'].append([{'text': f"📁 {pl[1]}", 'callback_data': f'addto_{pl[0]}_{video_id}'}])
     keyboard['inline_keyboard'].append(home_button())
-    edit_message(chat_id, message_id, "📋 <b>Обери плейлист:</b>", keyboard)
+    edit_message(chat_id, message_id, "📋 Обери плейлист:", keyboard)
 
 def process_update(update):
     if 'callback_query' in update:
@@ -331,6 +307,7 @@ def process_update(update):
             api_call('answerCallbackQuery', {'callback_query_id': cb['id'], 'text': '🔒 Приватний бот'})
             return
         api_call('answerCallbackQuery', {'callback_query_id': cb['id']})
+        
         if data == 'menu_main': show_main_menu(chat_id, message_id)
         elif data == 'menu_search': show_search_menu(chat_id, message_id)
         elif data == 'menu_playlists': show_playlists(chat_id, message_id, user_id)
@@ -352,35 +329,32 @@ def process_update(update):
             pl_id = int(data.replace('search_in_pl_', ''))
             cursor.execute('INSERT OR REPLACE INTO user_state (user_id, state, value) VALUES (?, ?, ?)', (user_id, f'search_in_pl_{pl_id}', ''))
             conn.commit()
-            edit_message(chat_id, message_id, "🔍 <b>Пошук у плейлисті</b>\n\n✏️ Напиши назву треку:", {'inline_keyboard': [back_button(f'playlist_{pl_id}_0', '↩️  До плейлисту'), [{'text': '🏠  Головне меню', 'callback_data': 'menu_main'}]]})
+            edit_message(chat_id, message_id, "🔍 Пошук у плейлисті\n\n✏️ Напиши назву:", {'inline_keyboard': [back_button(f'playlist_{pl_id}_0'), home_button()]})
         elif data.startswith('play_'):
             video_id = data.replace('play_', '')
             file_id = get_file_id(video_id)
             if file_id:
-                result = send_audio_by_id(chat_id, file_id)
-                if result and result.get('ok'):
-                    cursor.execute('SELECT title, artist FROM tracks WHERE video_id = ?', (video_id,))
-                    track = cursor.fetchone()
-                    if track:
-                        show_track_actions(chat_id, video_id, track[0], track[1])
+                send_audio_by_id(chat_id, file_id)
+                cursor.execute('SELECT title, artist FROM tracks WHERE video_id = ?', (video_id,))
+                track = cursor.fetchone()
+                if track: show_track_actions(chat_id, video_id, track[0], track[1])
             else:
-                status_msg = send_message(chat_id, "⬇️ <b>Завантажую...</b>")
-                status_id = status_msg['result']['message_id'] if status_msg and status_msg.get('ok') else None
+                st = send_message(chat_id, "⬇️ Завантажую...")
+                sid = st['result']['message_id'] if st and st.get('ok') else None
                 try:
                     mp3_path = download_audio(video_id)
                     result = send_audio_file(chat_id, mp3_path)
                     if result and result.get('ok'):
                         new_file_id = result['result']['audio']['file_id']
-                        title = result['result']['audio'].get('title', 'Невідомий трек')
-                        artist = result['result']['audio'].get('performer', 'Невідомий артист')
+                        title = result['result']['audio'].get('title', 'Невідомий')
+                        artist = result['result']['audio'].get('performer', 'Невідомий')
                         save_track_info(video_id, title, artist, new_file_id)
-                        if status_id: delete_message(chat_id, status_id)
+                        if sid: delete_message(chat_id, sid)
                         show_track_actions(chat_id, video_id, title, artist)
-                    elif status_id:
-                        edit_message(chat_id, status_id, "❌ Помилка завантаження", main_menu_keyboard())
+                    elif sid: edit_message(chat_id, sid, "❌ Помилка", main_menu_keyboard())
                     os.remove(mp3_path)
                 except Exception as e:
-                    if status_id: edit_message(chat_id, status_id, f"❌ Помилка: {str(e)[:100]}", main_menu_keyboard())
+                    if sid: edit_message(chat_id, sid, f"❌ {str(e)[:100]}", main_menu_keyboard())
         elif data.startswith('addtopl_'): show_add_to_playlist(chat_id, message_id, data.replace('addtopl_', ''), user_id)
         elif data.startswith('addto_'):
             parts = data.split('_')
@@ -418,9 +392,9 @@ def process_update(update):
         elif text == '/menu': show_main_menu(chat_id)
         else:
             cursor.execute('SELECT state FROM user_state WHERE user_id = ?', (user_id,))
-            state_row = cursor.fetchone()
-            if state_row:
-                state = state_row[0]
+            row = cursor.fetchone()
+            if row:
+                state = row[0]
                 if state in ['search_track', 'search_artist']:
                     search_type = "track" if state == 'search_track' else "artist"
                     results = search_youtube(text, search_type=search_type)
@@ -430,23 +404,23 @@ def process_update(update):
                     try:
                         cursor.execute('INSERT INTO playlists (name, user_id) VALUES (?, ?)', (name, user_id))
                         conn.commit()
-                        send_message(chat_id, f"✅ Плейлист <b>{name}</b> створено!", main_menu_keyboard())
+                        send_message(chat_id, f"✅ {name} створено!", main_menu_keyboard())
                     except:
-                        send_message(chat_id, "❌ Назва вже існує", main_menu_keyboard())
+                        send_message(chat_id, "❌ Назва існує", main_menu_keyboard())
                 elif state.startswith('search_in_pl_'):
                     pl_id = int(state.replace('search_in_pl_', ''))
-                    cursor.execute("SELECT pt.video_id, pt.title, pt.artist FROM playlist_tracks pt WHERE pt.playlist_id = ? AND pt.title LIKE ? LIMIT 10", (pl_id, f'%{text}%'))
+                    cursor.execute("SELECT video_id, title, artist FROM playlist_tracks WHERE playlist_id = ? AND title LIKE ? LIMIT 10", (pl_id, f'%{text}%'))
                     tracks = cursor.fetchall()
                     cursor.execute('SELECT name FROM playlists WHERE id = ?', (pl_id,))
                     pl_name = cursor.fetchone()[0]
-                    keyboard = {'inline_keyboard': []}
-                    txt = f"🔍 <b>{pl_name}</b>\n\n" + ("Нічого не знайдено." if not tracks else "Знайдено:\n")
-                    for i, t in enumerate(tracks):
-                        txt += f"{i+1}. {t[1][:50]}\n"
-                        keyboard['inline_keyboard'].append([{'text': f"▶️ {t[1][:45]}", 'callback_data': f"play_{t[0]}"}])
-                    keyboard['inline_keyboard'].append(back_button(f'playlist_{pl_id}_0'))
-                    keyboard['inline_keyboard'].append(home_button())
-                    send_message(chat_id, txt, keyboard)
+                    kb = {'inline_keyboard': []}
+                    txt = f"🔍 <b>{pl_name}</b>\n\n" + ("Нічого." if not tracks else "Знайдено:\n")
+                    for t in tracks:
+                        txt += f"• {t[1][:50]}\n"
+                        kb['inline_keyboard'].append([{'text': f"▶️ {t[1][:45]}", 'callback_data': f"play_{t[0]}"}])
+                    kb['inline_keyboard'].append(back_button(f'playlist_{pl_id}_0'))
+                    kb['inline_keyboard'].append(home_button())
+                    send_message(chat_id, txt, kb)
                 cursor.execute('DELETE FROM user_state WHERE user_id = ?', (user_id,))
                 conn.commit()
 
@@ -464,9 +438,9 @@ def cleanup_temp_files():
         temp_dir = tempfile.gettempdir()
         for f in os.listdir(temp_dir):
             if f.endswith('.mp3') or f.endswith('.txt'):
-                filepath = os.path.join(temp_dir, f)
-                if time.time() - os.path.getmtime(filepath) > 3600:
-                    os.remove(filepath)
+                p = os.path.join(temp_dir, f)
+                if time.time() - os.path.getmtime(p) > 3600:
+                    os.remove(p)
     except:
         pass
 
