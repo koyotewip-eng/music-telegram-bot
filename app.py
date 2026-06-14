@@ -70,7 +70,7 @@ def _write_cookies(path):
                 f.write(f".youtube.com\tTRUE\t/\tTRUE\t0\t{name}\t{value}\n")
 
 def search_youtube(query, max_results=15, search_type="track"):
-    """Пошук тільки YouTube з cookies"""
+    """Пошук YouTube з cookies"""
     all_results = []
     
     cookies_path = os.path.join(tempfile.gettempdir(), f"cookies_{hash(query)}.txt")
@@ -255,7 +255,7 @@ def show_search_prompt(chat_id, message_id, search_type, back_data):
     text = f"🔍 <b>Пошук за {type_text}ом</b>\n\n✏️ Напиши назву в чат:"
     
     cursor.execute('INSERT OR REPLACE INTO user_state (user_id, state, value) VALUES (?, ?, ?)',
-                   (ADMIN_ID, f'search_{search_type}', ''))
+                   (ADMIN_IDS[0], f'search_{search_type}', ''))
     conn.commit()
     
     kb = {'inline_keyboard': [
@@ -316,7 +316,7 @@ def show_create_playlist_prompt(chat_id, message_id):
     text = "➕ <b>Новий плейлист</b>\n\n✏️ Напиши назву в чат:"
     
     cursor.execute('INSERT OR REPLACE INTO user_state (user_id, state, value) VALUES (?, ?, ?)',
-                   (ADMIN_ID, 'create_playlist', ''))
+                   (ADMIN_IDS[0], 'create_playlist', ''))
     conn.commit()
     
     kb = {'inline_keyboard': [
@@ -466,7 +466,7 @@ def process_update(update):
         elif data.startswith('delete_pl_'):
             pl_id = int(data.replace('delete_pl_', ''))
             cursor.execute('DELETE FROM playlist_tracks WHERE playlist_id = ?', (pl_id,))
-            cursor.execute('DELETE FROM playlists WHERE id = ?', (pl_id,))
+            cursor.execute('DELETE FROM playlists WHERE id = ? AND user_id = ?', (pl_id, user_id))
             conn.commit()
             show_playlists(chat_id, message_id, user_id)
         elif data.startswith('search_in_pl_'):
@@ -547,7 +547,7 @@ def process_update(update):
         user_id = msg['from']['id']
         text = msg.get('text', '')
         
-        if user_id != ADMIN_ID:
+        if user_id not in ADMIN_IDS:
             send_message(chat_id, "🔒 Приватний бот")
             return
         
