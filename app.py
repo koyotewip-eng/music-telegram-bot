@@ -60,7 +60,7 @@ def api_call(method, params=None):
         return None
 
 def search_youtube(query, max_results=15, search_type="track"):
-    """Пошук через YouTube Music"""
+    """Пошук музики — просто та ефективно"""
     all_results = []
     
     ydl_opts = {
@@ -73,14 +73,14 @@ def search_youtube(query, max_results=15, search_type="track"):
         }
     }
     
-    # === СПОСІБ 1: YouTube Music (music.youtube.com) ===
+    # Пошук на YouTube
     try:
         if search_type == "artist":
-            query_url = f"https://music.youtube.com/search?q={urllib.parse.quote(query)}"
-            yt_query = f"ytsearch{max_results}:{query} album track official"
+            search_query = f"{query} songs"
         else:
-            query_url = f"https://music.youtube.com/search?q={urllib.parse.quote(query)}"
-            yt_query = f"ytsearch{max_results}:{query} official audio"
+            search_query = f"{query} audio"
+        
+        yt_query = f"ytsearch{max_results}:{search_query}"
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(yt_query, download=False)
@@ -91,8 +91,8 @@ def search_youtube(query, max_results=15, search_type="track"):
                     duration = e.get('duration', 0)
                     vid = e.get('id', '')
                     
-                    # Фільтруємо тільки музику
-                    bad_keywords = ['gameplay', 'podcast', 'interview', 'tutorial', 'walkthrough', 'review']
+                    # Пропускаємо тільки явно не-музику
+                    bad_keywords = ['gameplay', 'podcast', 'interview', 'tutorial', 'walkthrough']
                     if all(kw not in title.lower() for kw in bad_keywords) and duration > 10:
                         all_results.append({
                             'video_id': vid,
@@ -104,7 +104,7 @@ def search_youtube(query, max_results=15, search_type="track"):
     except Exception as e:
         print(f"YouTube search error: {e}", flush=True)
     
-    # === СПОСІБ 2: SoundCloud ===
+    # Пошук на SoundCloud
     try:
         sc_query = f"scsearch{max_results}:{query}"
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
