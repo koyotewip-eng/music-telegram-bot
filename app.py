@@ -48,29 +48,44 @@ def api_call(method, params=None):
 
 def search_youtube(query, max_results=15, search_type="track"):
     all_results = []
-    ydl_opts = {
-        'quiet': True, 'no_warnings': True, 'extract_flat': True,
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
-            'Accept-Language': 'en-US,en;q=0.9',
-        }
-    }
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"ytsearch{max_results}:{query}", download=False)
-            for e in info.get('entries', []):
-                if e and e.get('duration', 0) > 10:
-                    all_results.append({
-                        'video_id': e.get('id', ''),
-                        'title': e.get('title', '')[:80],
-                        'artist': e.get('channel', '')[:50],
-                        'duration': e.get('duration', 0),
-                        'source': 'YouTube'
-                    })
-        print(f"Found {len(all_results)} results", flush=True)
-    except Exception as e:
-        print(f"Search error: {e}", flush=True)
-    return all_results[:15]
+    headers = [
+        {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'},
+        {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'},
+    ]
+    
+    for header in headers:
+        if len(all_results) >= max_results:
+            break
+        try:
+            ydl_opts = {
+                'quiet': True, 'no_warnings': True, 'extract_flat': True,
+                'http_headers': header
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(f"ytsearch{max_results}:{query}", download=False)
+                for e in info.get('entries', []):
+                    if e and e.get('duration', 0) > 10:
+                        all_results.append({
+                            'video_id': e.get('id', ''),
+                            'title': e.get('title', '')[:80],
+                            'artist': e.get('channel', '')[:50],
+                            'duration': e.get('duration', 0),
+                            'source': 'YouTube'
+                        })
+        except Exception as e:
+            print(f"Search attempt error: {e}", flush=True)
+            continue
+    
+    # Прибираємо дублікати
+    seen = set()
+    unique = []
+    for r in all_results:
+        if r['video_id'] not in seen:
+            seen.add(r['video_id'])
+            unique.append(r)
+    
+    print(f"Found {len(unique)} results for: {query}", flush=True)
+    return unique[:15]
 
 def download_audio(video_id):
     url = f"https://www.youtube.com/watch?v={video_id}"
@@ -85,11 +100,11 @@ def download_audio(video_id):
         'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
         'quiet': True, 'no_warnings': True,
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
-            'Accept': '*/*', 'Accept-Language': 'en-US,en;q=0.9',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
         },
         'socket_timeout': 30, 'retries': 5,
-        'extractor_args': {'youtube': {'skip': ['dash', 'hls']}},
     }
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
