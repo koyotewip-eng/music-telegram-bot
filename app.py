@@ -3,6 +3,7 @@ import json
 import tempfile
 import sqlite3
 import urllib.request
+import urllib.parse
 import yt_dlp
 import time
 import ssl
