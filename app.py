@@ -31,18 +31,40 @@ conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 cursor = conn.cursor()
 
 cursor.execute('''CREATE TABLE IF NOT EXISTS tracks (
-    video_id TEXT UNIQUE, title TEXT, artist TEXT, file_id TEXT)''')
+    video_id TEXT UNIQUE,
+    title TEXT,
+    artist TEXT,
+    file_id TEXT
+)''')
+
 cursor.execute('''CREATE TABLE IF NOT EXISTS playlists (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, user_id INTEGER,
-    UNIQUE(name, user_id))''')
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    user_id INTEGER,
+    UNIQUE(name, user_id)
+)''')
+
 cursor.execute('''CREATE TABLE IF NOT EXISTS playlist_tracks (
-    playlist_id INTEGER, video_id TEXT, title TEXT, artist TEXT,
-    FOREIGN KEY(playlist_id) REFERENCES playlists(id))''')
+    playlist_id INTEGER,
+    video_id TEXT,
+    title TEXT,
+    artist TEXT
+)''')
+
 cursor.execute('''CREATE TABLE IF NOT EXISTS favorites (
-    user_id INTEGER, video_id TEXT, title TEXT, artist TEXT,
-    UNIQUE(user_id, video_id))''')
-cursor.execute('''CREATE TABLE IF NOT EXISTS user_state 
-    (user_id INTEGER UNIQUE, state TEXT, value TEXT)''')
+    user_id INTEGER,
+    video_id TEXT,
+    title TEXT,
+    artist TEXT,
+    UNIQUE(user_id, video_id)
+)''')
+
+cursor.execute('''CREATE TABLE IF NOT EXISTS user_state (
+    user_id INTEGER UNIQUE,
+    state TEXT,
+    value TEXT
+)''')
+
 conn.commit()
 
 # ===== API FUNCTIONS =====
