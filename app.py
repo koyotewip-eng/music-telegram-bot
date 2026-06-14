@@ -46,11 +46,16 @@ def api_call(method, params=None):
         print(f"API error: {e}", flush=True)
         return None
 
-def search_music_piped(query, max_results=15):
-    """Пошук через Piped API (проксі YouTube)"""
+def search_music_piped(query, max_results=15, search_type="track"):
+    """Пошук через Piped API"""
     results = []
     try:
-        url = f"https://pipedapi.kavin.rocks/search?q={urllib.parse.quote(query)}&filter=music_songs"
+        if search_type == "artist":
+            search_query = f"{query} music"
+        else:
+            search_query = query
+        
+        url = f"https://pipedapi.kavin.rocks/search?q={urllib.parse.quote(search_query)}&filter=music_songs"
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=15, context=ssl_ctx) as resp:
             data = json.loads(resp.read())
@@ -65,12 +70,16 @@ def search_music_piped(query, max_results=15):
                         'duration': item.get('duration', 0),
                         'source': 'YouTube'
                     })
+        print(f"Found {len(results)} results for: {query}", flush=True)
     except Exception as e:
         print(f"Piped search error: {e}", flush=True)
     
     return results
 
-def download_audio_piped(video_id):
+def search_youtube(query, max_results=15, search_type="track"):
+    return search_music_piped(query, max_results, search_type)
+
+def download_audio(video_id):
     """Завантаження через Piped"""
     url = f"https://pipedapi.kavin.rocks/streams/{video_id}"
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
@@ -79,22 +88,19 @@ def download_audio_piped(video_id):
         with urllib.request.urlopen(req, timeout=15, context=ssl_ctx) as resp:
             data = json.loads(resp.read())
         
-        # Шукаємо аудіо-трек
         audio_streams = [s for s in data.get('audioStreams', []) if s.get('quality')]
         if not audio_streams:
-            # Якщо немає окремого аудіо — беремо відео
             video_streams = data.get('videoStreams', [])
             if video_streams:
                 stream_url = video_streams[0].get('url', '')
             else:
                 raise Exception("No streams found")
         else:
-            stream_url = audio_streams[-1].get('url', '')  # Найкраща якість
+            stream_url = audio_streams[-1].get('url', '')
         
         if not stream_url:
             raise Exception("Empty stream URL")
         
-        # Завантажуємо через yt-dlp
         temp_dir = tempfile.gettempdir()
         file_hash = str(abs(hash(video_id)))
         output = os.path.join(temp_dir, f"{file_hash}.%(ext)s")
@@ -116,10 +122,6 @@ def download_audio_piped(video_id):
     except Exception as e:
         print(f"Piped download error: {e}", flush=True)
         raise e
-
-# Використовуємо Piped як основні функції
-search_youtube = search_music_piped
-download_audio = download_audio_piped
 
 def send_message(chat_id, text, reply_markup=None):
     params = {'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'}
@@ -181,7 +183,8 @@ def main_menu_keyboard():
 
 def search_type_keyboard():
     return {'inline_keyboard': [
-        [{'text': '🎵  За треком', 'callback_data': 'search_track'}],
+        [{'text': '🎵  За треком', 'callback_data': 'search_track'},
+         {'text': '🎤  За артистом', 'callback_data': 'search_artist'}],
         [{'text': '🏠  Головне меню', 'callback_data': 'menu_main'}]
     ]}
 
@@ -207,16 +210,18 @@ def show_search_menu(chat_id, message_id):
     edit_message(chat_id, message_id, "🔍 <b>Пошук музики</b>\n\nОбери тип:", search_type_keyboard())
 
 def show_search_prompt(chat_id, message_id, search_type, back_data, user_id):
+    type_text = "трек" if search_type == "track" else "артиста"
     cursor.execute('INSERT OR REPLACE INTO user_state (user_id, state, value) VALUES (?, ?, ?)',
                    (user_id, f'search_{search_type}', ''))
     conn.commit()
-    edit_message(chat_id, message_id, "🔍 <b>Пошук</b>\n\n✏️ Напиши назву:", {'inline_keyboard': [back_button(back_data), home_button()]})
+    edit_message(chat_id, message_id, f"🔍 <b>Пошук за {type_text}ом</b>\n\n✏️ Напиши назву:", {'inline_keyboard': [back_button(back_data), home_button()]})
 
 def show_search_results(chat_id, results, query, search_type):
+    type_text = "треком" if search_type == "track" else "артистом"
     if not results:
-        send_message(chat_id, f"😔 Нічого не знайдено: <b>{query}</b>", main_menu_keyboard())
+        send_message(chat_id, f"😔 Нічого не знайдено за {type_text}: <b>{query}</b>", main_menu_keyboard())
         return
-    text = f"🎶 <b>Результати:</b> {query}\n\n"
+    text = f"🎶 <b>Результати за {type_text}:</b> {query}\n\n"
     keyboard = {'inline_keyboard': []}
     for i, t in enumerate(results[:10]):
         dur = format_duration(t.get('duration', 0))
@@ -329,6 +334,7 @@ def process_update(update):
         elif data == 'menu_favorites': show_favorites(cid, mid, uid)
         elif data == 'menu_help': show_help(cid, mid)
         elif data == 'search_track': show_search_prompt(cid, mid, 'track', 'menu_search', uid)
+        elif data == 'search_artist': show_search_prompt(cid, mid, 'artist', 'menu_search', uid)
         elif data == 'create_playlist': show_create_playlist_prompt(cid, mid, uid)
         elif data.startswith('playlist_'):
             p = data.split('_')
