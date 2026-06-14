@@ -7,6 +7,7 @@ import yt_dlp
 import time
 import ssl
 import http.server
+import socketserver
 import threading
 
 print("=== STARTING ===", flush=True)
@@ -58,19 +59,17 @@ def api_call(method, params=None):
         return None
 
 def search_youtube(query, max_results=10, search_type="track"):
-    """Пошук музики з YouTube Music + SoundCloud"""
     all_results = []
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
         'extract_flat': True,
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
         }
     }
     
-    # Джерело 1: YouTube Music
     try:
         if search_type == "artist":
             yt_query = f"ytsearch{max_results}:{query} official audio topic"
@@ -84,15 +83,8 @@ def search_youtube(query, max_results=10, search_type="track"):
                     title = e.get('title', '')
                     channel = e.get('channel', '')
                     duration = e.get('duration', 0)
-                    
-                    # Фільтруємо не-музику
-                    bad_keywords = ['gameplay', 'подкаст', 'podcast', 'interview', 'интервью',
-                                   'review', 'обзор', 'tutorial', 'live stream', 'прямой эфир',
-                                   'reaction', 'реакция', 'mix', 'микс', 'hour', 'hours']
-                    title_lower = title.lower()
-                    is_music = all(kw not in title_lower for kw in bad_keywords)
-                    
-                    if is_music and duration > 30:
+                    bad_keywords = ['gameplay', 'podcast', 'interview', 'review', 'tutorial', 'reaction', 'mix']
+                    if all(kw not in title.lower() for kw in bad_keywords) and duration > 30:
                         all_results.append({
                             'video_id': e.get('id', ''),
                             'title': title[:80],
@@ -103,28 +95,22 @@ def search_youtube(query, max_results=10, search_type="track"):
     except Exception as e:
         print(f"YouTube search error: {e}", flush=True)
     
-    # Джерело 2: SoundCloud
     try:
         sc_query = f"scsearch{max_results}:{query}"
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(sc_query, download=False)
             for e in info.get('entries', []):
-                if e:
-                    title = e.get('title', '')
-                    uploader = e.get('uploader', '')
-                    duration = e.get('duration', 0)
-                    if duration > 30:
-                        all_results.append({
-                            'video_id': e.get('webpage_url', ''),
-                            'title': title[:80],
-                            'artist': uploader[:50],
-                            'duration': duration,
-                            'source': 'SoundCloud'
-                        })
+                if e and e.get('duration', 0) > 30:
+                    all_results.append({
+                        'video_id': e.get('webpage_url', ''),
+                        'title': e.get('title', '')[:80],
+                        'artist': e.get('uploader', '')[:50],
+                        'duration': e.get('duration', 0),
+                        'source': 'SoundCloud'
+                    })
     except Exception as e:
         print(f"SoundCloud search error: {e}", flush=True)
     
-    # Прибираємо дублікати
     seen = set()
     unique_results = []
     for r in all_results:
@@ -136,7 +122,6 @@ def search_youtube(query, max_results=10, search_type="track"):
     return unique_results[:10]
 
 def download_audio(video_id):
-    """Завантаження аудіо (YouTube або SoundCloud)"""
     if 'soundcloud.com' in video_id:
         url = video_id
     else:
@@ -154,9 +139,12 @@ def download_audio(video_id):
         'quiet': True,
         'no_warnings': True,
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+            'Accept': '*/*',
             'Accept-Language': 'en-US,en;q=0.9',
         },
+        'socket_timeout': 30,
+        'retries': 5,
     }
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -456,7 +444,6 @@ def process_update(update):
         
         api_call('answerCallbackQuery', {'callback_query_id': cb['id']})
         
-        # Навігація
         if data == 'menu_main':
             show_main_menu(chat_id, message_id)
         elif data == 'menu_search':
@@ -467,17 +454,13 @@ def process_update(update):
             show_favorites(chat_id, message_id, user_id)
         elif data == 'menu_help':
             show_help(chat_id, message_id)
-        
-        # Пошук
         elif data == 'search_track':
             show_search_prompt(chat_id, message_id, 'track', 'menu_search')
         elif data == 'search_artist':
             show_search_prompt(chat_id, message_id, 'artist', 'menu_search')
-        
-        # Плейлисти
         elif data == 'create_playlist':
             show_create_playlist_prompt(chat_id, message_id)
-        elif data.startswith('playlist_') and not data.startswith('playlist_tracks'):
+        elif data.startswith('playlist_'):
             parts = data.split('_')
             pl_id = int(parts[1])
             page = int(parts[2]) if len(parts) > 2 else 0
@@ -499,11 +482,8 @@ def process_update(update):
                 [{'text': '🏠  Головне меню', 'callback_data': 'menu_main'}]
             ]}
             edit_message(chat_id, message_id, text, kb)
-        
-        # Відтворення
         elif data.startswith('play_'):
             video_id = data.replace('play_', '')
-            
             file_id = get_file_id(video_id)
             if file_id:
                 result = send_audio_by_id(chat_id, file_id)
@@ -515,31 +495,24 @@ def process_update(update):
             else:
                 status_msg = send_message(chat_id, "⬇️ <b>Завантажую...</b>")
                 status_id = status_msg['result']['message_id'] if status_msg and status_msg.get('ok') else None
-                
                 try:
                     mp3_path = download_audio(video_id)
                     result = send_audio_file(chat_id, mp3_path)
-                    
                     if result and result.get('ok'):
                         new_file_id = result['result']['audio']['file_id']
                         title = result['result']['audio'].get('title', 'Невідомий трек')
                         artist = result['result']['audio'].get('performer', 'Невідомий артист')
                         save_track_info(video_id, title, artist, new_file_id)
-                        
                         if status_id:
                             delete_message(chat_id, status_id)
-                        
                         show_track_actions(chat_id, video_id, title, artist)
                     else:
                         if status_id:
                             edit_message(chat_id, status_id, "❌ Помилка завантаження", main_menu_keyboard())
-                    
                     os.remove(mp3_path)
                 except Exception as e:
                     if status_id:
                         edit_message(chat_id, status_id, f"❌ Помилка: {str(e)[:100]}", main_menu_keyboard())
-        
-        # Додати в плейлист
         elif data.startswith('addtopl_'):
             video_id = data.replace('addtopl_', '')
             show_add_to_playlist(chat_id, message_id, video_id, user_id)
@@ -547,7 +520,6 @@ def process_update(update):
             parts = data.split('_')
             pl_id = int(parts[1])
             video_id = '_'.join(parts[2:])
-            
             cursor.execute('SELECT title, artist FROM tracks WHERE video_id = ?', (video_id,))
             track = cursor.fetchone()
             if track:
@@ -558,8 +530,6 @@ def process_update(update):
                     api_call('answerCallbackQuery', {'callback_query_id': cb['id'], 'text': '✅ Додано!', 'show_alert': False})
                 except:
                     api_call('answerCallbackQuery', {'callback_query_id': cb['id'], 'text': 'Уже в плейлисті', 'show_alert': False})
-        
-        # Додати в улюблене
         elif data.startswith('fav_'):
             video_id = data.replace('fav_', '')
             cursor.execute('SELECT title, artist FROM tracks WHERE video_id = ?', (video_id,))
@@ -599,11 +569,9 @@ def process_update(update):
             if state in ['search_track', 'search_artist']:
                 search_type = "track" if state == 'search_track' else "artist"
                 type_text = "треком" if search_type == "track" else "артистом"
-                
                 send_message(chat_id, f"🔍 Шукаю за {type_text}: <b>{text}</b>...")
                 results = search_youtube(text, search_type=search_type)
                 show_search_results(chat_id, results, text, search_type)
-                
                 cursor.execute('DELETE FROM user_state WHERE user_id = ?', (user_id,))
                 conn.commit()
             
@@ -615,7 +583,6 @@ def process_update(update):
                     send_message(chat_id, f"✅ Плейлист <b>{name}</b> створено!", main_menu_keyboard())
                 except:
                     send_message(chat_id, "❌ Плейлист із такою назвою вже є", main_menu_keyboard())
-                
                 cursor.execute('DELETE FROM user_state WHERE user_id = ?', (user_id,))
                 conn.commit()
             
@@ -625,10 +592,8 @@ def process_update(update):
                                  WHERE pt.playlist_id = ? AND pt.title LIKE ? LIMIT 10''',
                               (pl_id, f'%{text}%'))
                 tracks = cursor.fetchall()
-                
                 cursor.execute('SELECT name FROM playlists WHERE id = ?', (pl_id,))
                 pl_name = cursor.fetchone()[0]
-                
                 keyboard = {'inline_keyboard': []}
                 if not tracks:
                     result_text = f"🔍 <b>{pl_name}</b>\n\nНічого не знайдено."
@@ -640,13 +605,23 @@ def process_update(update):
                             'text': f"▶️ {t[1][:45]}",
                             'callback_data': f"play_{t[0]}"
                         }])
-                
                 keyboard['inline_keyboard'].append(back_button(f'playlist_{pl_id}_0', '↩️  До плейлисту'))
                 keyboard['inline_keyboard'].append(home_button())
                 send_message(chat_id, result_text, keyboard)
-                
                 cursor.execute('DELETE FROM user_state WHERE user_id = ?', (user_id,))
                 conn.commit()
+
+# ===== HEALTH SERVER =====
+
+def start_health_server():
+    class Handler(http.server.SimpleHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'OK')
+    
+    with socketserver.TCPServer(("0.0.0.0", 10000), Handler) as httpd:
+        httpd.serve_forever()
 
 # ===== MAIN LOOP =====
 
@@ -661,17 +636,6 @@ def cleanup_temp_files():
     except:
         pass
 
-def run_health_server():
-    class Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b'OK')
-        def log_message(self, *args):
-            pass
-    httpd = http.server.HTTPServer(('0.0.0.0', 10000), Handler)
-    httpd.serve_forever()
-
 def main():
     print("✅ Bot started", flush=True)
     
@@ -685,7 +649,6 @@ def main():
         offset = 0
     
     print(f"Offset: {offset}", flush=True)
-    
     last_cleanup = time.time()
     
     while True:
@@ -695,15 +658,15 @@ def main():
                 for upd in updates['result']:
                     offset = upd['update_id'] + 1
                     process_update(upd)
-            
             if time.time() - last_cleanup > 3600:
                 cleanup_temp_files()
                 last_cleanup = time.time()
-            
             time.sleep(1)
         except Exception as e:
             print(f"Loop error: {e}", flush=True)
             time.sleep(5)
 
 if __name__ == "__main__":
+    threading.Thread(target=start_health_server, daemon=True).start()
+    time.sleep(1)
     main()
