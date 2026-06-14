@@ -611,17 +611,17 @@ def process_update(update):
                 cursor.execute('DELETE FROM user_state WHERE user_id = ?', (user_id,))
                 conn.commit()
 
-# ===== HEALTH SERVER =====
+# ===== HEALTH SERVER (Flask) =====
+
+from flask import Flask
+health_app = Flask(__name__)
+
+@health_app.route('/')
+def health():
+    return 'OK'
 
 def start_health_server():
-    class Handler(http.server.SimpleHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b'OK')
-    
-    with socketserver.TCPServer(("0.0.0.0", 10000), Handler) as httpd:
-        httpd.serve_forever()
+    health_app.run(host='0.0.0.0', port=10000)
 
 # ===== MAIN LOOP =====
 
@@ -668,5 +668,5 @@ def main():
 
 if __name__ == "__main__":
     threading.Thread(target=start_health_server, daemon=True).start()
-    time.sleep(1)
+    time.sleep(2)
     main()
