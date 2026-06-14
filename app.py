@@ -14,7 +14,7 @@ print("=== STARTING ===", flush=True)
 
 # ===== НАЛАШТУВАННЯ =====
 BOT_TOKEN = "8981234358:AAHMZAirobfP_F-bt5WCY1LJxyRMW0E5OH8"
-ADMIN_ID = 2104120716
+ADMIN_IDS = [2104120716, 508881013]
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 # Cookies для YouTube
@@ -436,7 +436,7 @@ def process_update(update):
         data = cb['data']
         user_id = cb['from']['id']
         
-        if user_id != ADMIN_ID:
+        if user_id not in ADMIN_IDS:
             api_call('answerCallbackQuery', {'callback_query_id': cb['id'], 'text': '🔒 Приватний бот'})
             return
         
