@@ -7,9 +7,8 @@ import urllib.parse
 import yt_dlp
 import time
 import ssl
-import http.server
-import socketserver
 import threading
+from flask import Flask
 
 print("=== STARTING ===", flush=True)
 
@@ -17,6 +16,9 @@ print("=== STARTING ===", flush=True)
 BOT_TOKEN = "8981234358:AAHMZAirobfP_F-bt5WCY1LJxyRMW0E5OH8"
 ADMIN_ID = 2104120716
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
+
+# Cookies для YouTube
+COOKIES_RAW = "APISID=6lq2xTKRyDqX7yyw/AQowjf-gmcILKItxs; SAPISID=H1i1QJwoc_e-Ssej/AKAi8a-McoHTo32uG; __Secure-1PAPISID=H1i1QJwoc_e-Ssej/AKAi8a-McoHTo32uG; __Secure-3PAPISID=H1i1QJwoc_e-Ssej/AKAi8a-McoHTo32uG; SID=g.a000_AhEoweiy-VOhvczD0d3hgh57Fzad1L4ERmJPPHXWDN6mXtNwsirFVbA1VA-zn69kY2UAwACgYKASYSARcSFQHGX2Mij2CKNcwuu9ilU1T9Q2tuwRoVAUF8yKqGK42Aucx9qtN2CXDvcdg30076; SIDCC=AKEyXzUMJlIlDPWhw0UGjzvKk5-ZAjM59mgEImqLcObQdTZYNbI_eBCZwK9TK6aDSBNffXuaRQ; PREF=f6=40000000&tz=Europe.Berlin"
 
 ssl_ctx = ssl.create_default_context()
 ssl_ctx.check_hostname = False
@@ -59,54 +61,54 @@ def api_call(method, params=None):
         print(f"API error: {e}", flush=True)
         return None
 
+def _write_cookies(path):
+    with open(path, 'w') as f:
+        f.write("# Netscape HTTP Cookie File\n")
+        for cookie in COOKIES_RAW.split('; '):
+            if '=' in cookie:
+                name, value = cookie.split('=', 1)
+                f.write(f".youtube.com\tTRUE\t/\tTRUE\t0\t{name}\t{value}\n")
+
 def search_youtube(query, max_results=15, search_type="track"):
-    """Пошук музики — просто та ефективно"""
+    """Пошук музики з cookies"""
     all_results = []
+    
+    cookies_path = os.path.join(tempfile.gettempdir(), f"cookies_search_{hash(query)}.txt")
+    _write_cookies(cookies_path)
     
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
         'extract_flat': True,
+        'cookiefile': cookies_path,
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
         }
     }
     
-    # Пошук на YouTube
     try:
         if search_type == "artist":
-            search_query = f"{query} songs"
+            yt_query = f"ytsearch{max_results}:{query} music"
         else:
-            search_query = f"{query} audio"
-        
-        yt_query = f"ytsearch{max_results}:{search_query}"
+            yt_query = f"ytsearch{max_results}:{query} audio"
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(yt_query, download=False)
             for e in info.get('entries', []):
-                if e:
-                    title = e.get('title', '')
-                    channel = e.get('channel', '')
-                    duration = e.get('duration', 0)
-                    vid = e.get('id', '')
-                    
-                    # Пропускаємо тільки явно не-музику
-                    bad_keywords = ['gameplay', 'podcast', 'interview', 'tutorial', 'walkthrough']
-                    if all(kw not in title.lower() for kw in bad_keywords) and duration > 10:
-                        all_results.append({
-                            'video_id': vid,
-                            'title': title[:80],
-                            'artist': channel[:50],
-                            'duration': duration,
-                            'source': 'YouTube'
-                        })
+                if e and e.get('duration', 0) > 10:
+                    all_results.append({
+                        'video_id': e.get('id', ''),
+                        'title': e.get('title', '')[:80],
+                        'artist': e.get('channel', '')[:50],
+                        'duration': e.get('duration', 0),
+                        'source': 'YouTube'
+                    })
     except Exception as e:
-        print(f"YouTube search error: {e}", flush=True)
+        print(f"YouTube error: {e}", flush=True)
     
-    # Пошук на SoundCloud
     try:
-        sc_query = f"scsearch{max_results}:{query}"
+        sc_query = f"scsearch10:{query}"
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(sc_query, download=False)
             for e in info.get('entries', []):
@@ -118,10 +120,14 @@ def search_youtube(query, max_results=15, search_type="track"):
                         'duration': e.get('duration', 0),
                         'source': 'SoundCloud'
                     })
-    except Exception as e:
-        print(f"SoundCloud search error: {e}", flush=True)
+    except:
+        pass
     
-    # Прибираємо дублікати
+    try:
+        os.remove(cookies_path)
+    except:
+        pass
+    
     seen = set()
     unique_results = []
     for r in all_results:
@@ -130,9 +136,11 @@ def search_youtube(query, max_results=15, search_type="track"):
             seen.add(key)
             unique_results.append(r)
     
+    print(f"Found {len(unique_results)} results", flush=True)
     return unique_results[:15]
 
 def download_audio(video_id):
+    """Завантаження з cookies"""
     if 'soundcloud.com' in video_id:
         url = video_id
     else:
@@ -143,23 +151,32 @@ def download_audio(video_id):
     output = os.path.join(temp_dir, f"{file_hash}.%(ext)s")
     final_path = os.path.join(temp_dir, f"{file_hash}.mp3")
     
+    cookies_path = os.path.join(temp_dir, f"cookies_{file_hash}.txt")
+    _write_cookies(cookies_path)
+    
     ydl_opts = {
         'format': 'bestaudio/best',
         'outtmpl': output,
         'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
         'quiet': True,
         'no_warnings': True,
+        'cookiefile': cookies_path,
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
             'Accept': '*/*',
             'Accept-Language': 'en-US,en;q=0.9',
         },
         'socket_timeout': 30,
-        'retries': 5,
+        'retries': 3,
     }
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
+    
+    try:
+        os.remove(cookies_path)
+    except:
+        pass
     
     return final_path
 
@@ -622,9 +639,8 @@ def process_update(update):
                 cursor.execute('DELETE FROM user_state WHERE user_id = ?', (user_id,))
                 conn.commit()
 
-# ===== HEALTH SERVER (Flask) =====
+# ===== HEALTH SERVER =====
 
-from flask import Flask
 health_app = Flask(__name__)
 
 @health_app.route('/')
@@ -640,10 +656,13 @@ def cleanup_temp_files():
     try:
         temp_dir = tempfile.gettempdir()
         for f in os.listdir(temp_dir):
-            if f.endswith('.mp3'):
+            if f.endswith('.mp3') or f.endswith('.txt'):
                 filepath = os.path.join(temp_dir, f)
-                if time.time() - os.path.getmtime(filepath) > 3600:
-                    os.remove(filepath)
+                try:
+                    if time.time() - os.path.getmtime(filepath) > 3600:
+                        os.remove(filepath)
+                except:
+                    pass
     except:
         pass
 
