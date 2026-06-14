@@ -143,7 +143,23 @@ def process_update(update):
 
 def main():
     print("✅ Bot started", flush=True)
-    offset = 0
+    
+    # Спочатку скидаємо всі накопичені оновлення
+    api_call('deleteWebhook')
+    time.sleep(1)
+    
+    # Отримуємо останній update_id
+    updates = api_call('getUpdates', {'offset': -1, 'timeout': 1})
+    if updates and updates.get('ok') and updates.get('result'):
+        if len(updates['result']) > 0:
+            offset = updates['result'][-1]['update_id'] + 1
+        else:
+            offset = 0
+    else:
+        offset = 0
+    
+    print(f"Starting from offset: {offset}", flush=True)
+    
     while True:
         try:
             updates = api_call('getUpdates', {'offset': offset, 'timeout': 30})
@@ -151,10 +167,9 @@ def main():
                 for upd in updates['result']:
                     offset = upd['update_id'] + 1
                     process_update(upd)
-            time.sleep(1)
+            time.sleep(0.5)
         except Exception as e:
             print(f"Loop error: {e}", flush=True)
-            time.sleep(5)
-
+            time.sleep(3)
 if __name__ == "__main__":
     main()
