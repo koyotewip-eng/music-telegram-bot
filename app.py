@@ -700,12 +700,10 @@ def main():
                 cleanup_temp_files()
                 last_cleanup = time.time()
             
-            time.sleep(0.5)
+            time.sleep(1)
         except Exception as e:
             print(f"Loop error: {e}", flush=True)
-            time.sleep(3)
+            time.sleep(5)
 
 if __name__ == "__main__":
-    threading.Thread(target=run_health_server, daemon=True).start()
-    time.sleep(1)
     main()
