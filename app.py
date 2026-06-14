@@ -684,4 +684,7 @@ def run_health_server():
 threading.Thread(target=run_health_server, daemon=True).start()
 
 if __name__ == "__main__":
+    # Запускаємо health-сервер ПЕРЕД ботом
+    threading.Thread(target=run_health_server, daemon=True).start()
+    time.sleep(1)  # Даємо серверу запуститись
     main()
