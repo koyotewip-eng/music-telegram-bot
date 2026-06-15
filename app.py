@@ -20,6 +20,15 @@ ssl_ctx = ssl.create_default_context()
 ssl_ctx.check_hostname = False
 ssl_ctx.verify_mode = ssl.CERT_NONE
 
+PIPED_INSTANCES = [
+    "https://pipedapi.kavin.rocks",
+    "https://pipedapi.tokhmi.xyz",
+    "https://pipedapi.moomoo.me",
+    "https://pipedapi.syncpundit.io",
+    "https://pipedapi.adminforge.de",
+    "https://pipedapi.qdi.fi",
+]
+
 DB_PATH = '/data/music.db'
 os.makedirs('/data', exist_ok=True)
 conn = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -47,81 +56,83 @@ def api_call(method, params=None):
         return None
 
 def search_music_piped(query, max_results=15, search_type="track"):
-    """Пошук через Piped API"""
     results = []
-    try:
-        if search_type == "artist":
-            search_query = f"{query} music"
-        else:
-            search_query = query
-        
-        url = f"https://pipedapi.kavin.rocks/search?q={urllib.parse.quote(search_query)}&filter=music_songs"
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=15, context=ssl_ctx) as resp:
-            data = json.loads(resp.read())
-            items = data.get('items', [])
-            for item in items[:max_results]:
-                vid = item.get('url', '').replace('/watch?v=', '')
-                if vid:
-                    results.append({
-                        'video_id': vid,
-                        'title': item.get('title', '')[:80],
-                        'artist': item.get('uploaderName', '')[:50],
-                        'duration': item.get('duration', 0),
-                        'source': 'YouTube'
-                    })
-        print(f"Found {len(results)} results for: {query}", flush=True)
-    except Exception as e:
-        print(f"Piped search error: {e}", flush=True)
+    if search_type == "artist":
+        search_query = f"{query} music"
+    else:
+        search_query = query
     
+    for instance in PIPED_INSTANCES:
+        try:
+            url = f"{instance}/search?q={urllib.parse.quote(search_query)}&filter=music_songs"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=10, context=ssl_ctx) as resp:
+                data = json.loads(resp.read())
+                items = data.get('items', [])
+                for item in items[:max_results]:
+                    vid = item.get('url', '').replace('/watch?v=', '')
+                    if vid:
+                        results.append({
+                            'video_id': vid,
+                            'title': item.get('title', '')[:80],
+                            'artist': item.get('uploaderName', '')[:50],
+                            'duration': item.get('duration', 0),
+                            'source': 'YouTube'
+                        })
+                if results:
+                    break
+        except Exception as e:
+            print(f"Piped {instance}: {e}", flush=True)
+            continue
+    
+    print(f"Found {len(results)} results for: {query}", flush=True)
     return results
 
 def search_youtube(query, max_results=15, search_type="track"):
     return search_music_piped(query, max_results, search_type)
 
 def download_audio(video_id):
-    """Завантаження через Piped"""
-    url = f"https://pipedapi.kavin.rocks/streams/{video_id}"
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    stream_url = None
     
-    try:
-        with urllib.request.urlopen(req, timeout=15, context=ssl_ctx) as resp:
-            data = json.loads(resp.read())
-        
-        audio_streams = [s for s in data.get('audioStreams', []) if s.get('quality')]
-        if not audio_streams:
-            video_streams = data.get('videoStreams', [])
-            if video_streams:
-                stream_url = video_streams[0].get('url', '')
-            else:
-                raise Exception("No streams found")
-        else:
-            stream_url = audio_streams[-1].get('url', '')
-        
-        if not stream_url:
-            raise Exception("Empty stream URL")
-        
-        temp_dir = tempfile.gettempdir()
-        file_hash = str(abs(hash(video_id)))
-        output = os.path.join(temp_dir, f"{file_hash}.%(ext)s")
-        final_path = os.path.join(temp_dir, f"{file_hash}.mp3")
-        
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'outtmpl': output,
-            'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
-            'quiet': True, 'no_warnings': True,
-            'socket_timeout': 30, 'retries': 3,
-        }
-        
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([stream_url])
-        
-        return final_path
+    for instance in PIPED_INSTANCES:
+        try:
+            url = f"{instance}/streams/{video_id}"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=10, context=ssl_ctx) as resp:
+                data = json.loads(resp.read())
+            
+            audio_streams = [s for s in data.get('audioStreams', []) if s.get('quality')]
+            if audio_streams:
+                stream_url = audio_streams[-1].get('url', '')
+            elif data.get('videoStreams'):
+                stream_url = data['videoStreams'][0].get('url', '')
+            
+            if stream_url:
+                break
+        except Exception as e:
+            print(f"Stream {instance}: {e}", flush=True)
+            continue
     
-    except Exception as e:
-        print(f"Piped download error: {e}", flush=True)
-        raise e
+    if not stream_url:
+        raise Exception("No streams available")
+    
+    temp_dir = tempfile.gettempdir()
+    file_hash = str(abs(hash(video_id)))
+    output = os.path.join(temp_dir, f"{file_hash}.%(ext)s")
+    final_path = os.path.join(temp_dir, f"{file_hash}.mp3")
+    
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': output,
+        'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
+        'quiet': True, 'no_warnings': True,
+        'socket_timeout': 30, 'retries': 3,
+    }
+    
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([stream_url])
+    
+    return final_path
 
 def send_message(chat_id, text, reply_markup=None):
     params = {'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'}
